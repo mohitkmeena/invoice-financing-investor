@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mohit.Invoice_financing_investor.consumer.InvestorUserDto;
 import com.mohit.Invoice_financing_investor.dto.*;
 import com.mohit.Invoice_financing_investor.model.Investor;
+import com.mohit.Invoice_financing_investor.repository.AadhaarOtpDataRepository;
 import com.mohit.Invoice_financing_investor.repository.InvestorRepository;
 import com.mohit.Invoice_financing_investor.service.InvestorService;
 import okhttp3.*;
@@ -11,13 +12,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-
+import java.util.Objects;
+@Service
 public class InvestorServiceImpl implements InvestorService {
 
     @Value("${sandbox.api.key}")
     private String apiKey;
+    @Autowired private AadhaarOtpDataRepository aadhaarOtpDataRepository;
 
     @Autowired private InvestorRepository investorRepository;
     @Override
@@ -171,9 +175,7 @@ public class InvestorServiceImpl implements InvestorService {
                     .ifscCode(investor.getIfscCode())
                     .build();
         }
-        private boolean aadhaarPanLinkStatus () {
-            return false;
-        }
+
 
 
     private String objectsTojson(Object object){
@@ -185,6 +187,149 @@ public class InvestorServiceImpl implements InvestorService {
         }
         return null;
     }
+    @Override
+   public ResponseEntity<ResponseDto> verifyAadhar(String investorId, VerifyAadharDto verifyAadharDto) {
+        try {
+            OkHttpClient client = new OkHttpClient();
+
+            String json = objectsTojson(verifyAadharDto);
+            MediaType mediaType = MediaType.parse("application/json");
+            RequestBody body = RequestBody.create(mediaType, json);
+
+            Request request = new Request.Builder()
+                    .url("https://api.sandbox.co.in/kyc/aadhaar/okyc/otp")
+                    .post(body)
+                    .addHeader("accept", "application/json")
+                    .addHeader("x-api-version", "2.0")
+                    .addHeader("content-type", "application/json")
+                    .addHeader("x-api-key", apiKey)
+                    .addHeader("authorization", "") // add bearer token if needed
+                    .build();
+
+            Response response = client.newCall(request).execute();
+            ObjectMapper objectMapper = new ObjectMapper();
+
+            if (response.code() != 200) {
+
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("Aadhar verification initiation failed,Enter valid aadhar " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+
+
+            String responseBody = response.body().string();
+           AadhaarOtpResponseDto otpResponse = objectMapper.readValue(responseBody, AadhaarOtpResponseDto.class);
+           if(Objects.equals(otpResponse.getData().getMessage(),"Invalid Aadhaar Card")){
+               return new ResponseEntity<>(ResponseDto.builder()
+                       .code("404")
+                       .message("Aadhar verification  failed,Enter valid aadhar " )
+                       .build(), HttpStatus.NOT_FOUND);
+           }
+           else if(Objects.equals(otpResponse.getMessage(),"OTP generated for this aadhaar, please try after 45 seconds")){
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("OTP generated for this aadhaar, please try after 45 seconds " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+           else if(Objects.equals(otpResponse.getData().getMessage(),"Aadhaar not linked to mobile number")){
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("Aadhaar not linked to mobile number " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+           else{
+               AadhaarOtpData aadhaarOtpData=otpResponse.getData();
+               aadhaarOtpData.setInvestorId(investorId);
+               aadhaarOtpDataRepository.save(aadhaarOtpData);
+           }
+
+
+            // Save or use the transaction ID from response if needed for OTP confirmation later
+            return new ResponseEntity<>(ResponseDto.builder()
+                    .code("200")
+                    .message("OTP sent successfully to your registered Aadhar number.")
+                    .build(), HttpStatus.OK);
+
+        } catch (IOException e) {
+            return new ResponseEntity<>(ResponseDto.builder()
+                    .code("500")
+                    .message("Internal Server Error while verifying Aadhar: " + e.getMessage())
+                    .build(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+    @Override
+    public ResponseEntity<ResponseDto> verifyAadhaarOtp(String investorId,VerifyOtpDto verifyOtpDto){
+        try {
+            OkHttpClient client = new OkHttpClient();
+
+            String json = objectsTojson(verifyOtpDto);
+            MediaType mediaType = MediaType.parse("application/json");
+            RequestBody body = RequestBody.create(mediaType, json);
+
+            Request request = new Request.Builder()
+                    .url("https://api.sandbox.co.in/kyc/aadhaar/okyc/otp/verify")
+                    .post(body)
+                    .addHeader("accept", "application/json")
+                    .addHeader("x-api-version", "2.0")
+                    .addHeader("content-type", "application/json")
+                    .addHeader("x-api-key", apiKey)
+                    .addHeader("authorization", "") // add bearer token if needed
+                    .build();
+
+            Response response = client.newCall(request).execute();
+            ObjectMapper objectMapper = new ObjectMapper();
+
+            if (response.code() != 200) {
+
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("Aadhar verification initiation failed,Enter valid aadhar " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+
+
+            String responseBody = response.body().string();
+            AadhaarOtpResponseDto otpResponse = objectMapper.readValue(responseBody, AadhaarOtpResponseDto.class);
+            if(Objects.equals(otpResponse.getData().getMessage(),"Invalid Aadhaar Card")){
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("404")
+                        .message("Aadhar verification  failed,Enter valid aadhar " )
+                        .build(), HttpStatus.NOT_FOUND);
+            }
+            else if(Objects.equals(otpResponse.getMessage(),"OTP generated for this aadhaar, please try after 45 seconds")){
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("OTP generated for this aadhaar, please try after 45 seconds " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+            else if(Objects.equals(otpResponse.getData().getMessage(),"Aadhaar not linked to mobile number")){
+                return new ResponseEntity<>(ResponseDto.builder()
+                        .code("400")
+                        .message("Aadhaar not linked to mobile number " )
+                        .build(), HttpStatus.BAD_REQUEST);
+            }
+            else{
+                AadhaarOtpData aadhaarOtpData=otpResponse.getData();
+                aadhaarOtpData.setInvestorId(investorId);
+                aadhaarOtpDataRepository.save(aadhaarOtpData);
+            }
+
+
+            // Save or use the transaction ID from response if needed for OTP confirmation later
+            return new ResponseEntity<>(ResponseDto.builder()
+                    .code("200")
+                    .message("OTP sent successfully to your registered Aadhar number.")
+                    .build(), HttpStatus.OK);
+
+        } catch (IOException e) {
+            return new ResponseEntity<>(ResponseDto.builder()
+                    .code("500")
+                    .message("Internal Server Error while verifying Aadhar: " + e.getMessage())
+                    .build(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
 
 
 }
