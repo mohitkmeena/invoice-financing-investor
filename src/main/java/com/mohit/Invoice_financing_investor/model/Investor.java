@@ -1,12 +1,21 @@
 package com.mohit.Invoice_financing_investor.model;
 
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Id;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Repository;
 
+@Data
+@Entity
+@Builder
+@AllArgsConstructor
+@RequiredArgsConstructor
+@Table(name = "investor")
 public class Investor  {
     @Id
     private String investorId;
@@ -30,8 +39,18 @@ public class Investor  {
     private String bankAccountNumber;
     private String bankName;
     private String ifscCode;
-
+    private boolean isPanVerified;
+    private boolean isAadhaarVerified;
     private boolean isIdVerified;
+
+
+    @PrePersist
+    public void verified(){
+        this.isPanVerified=false;
+        this.isIdVerified=false;
+        this.isAadhaarVerified=false;
+    }
+
 
 
 }
